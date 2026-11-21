@@ -1,0 +1,194 @@
+# INACTIVE REVIEW COPY. Do not install, rename or activate without approval.
+name: daemon-state-fs-once
+on:
+  push:
+    branches: [fix/shutdown-contracts-narrow-20261117]
+    paths: [.github/workflows/daemon-state-fs-once.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: daemon-state-fs-once
+  cancel-in-progress: false
+jobs:
+  daemon-state-fs:
+    if: github.run_attempt == 1 && github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PAYLOAD: ${{ github.workspace }}/tests/daemon-state-fs-once/payload
+      BOOT_PIN: e037ffb18048377daa9bd3cbaa0a96b7ca73df300b1af2850101ada2e77ff8a2
+      ROOT_PIN: afead7b8a60272fa66e8e231eeaff7fdb6f31fc1da508406ebb3b21d80092d10
+    steps:
+      - name: Read exact event checkout without saved credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify pinned payload and capture event
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I -B -S - "$PAYLOAD/bootstrap.INACTIVE.py" "$BOOT_PIN" "$ROOT_PIN" event /tmp/daemon-fs-event.json <<'PY'
+          import hashlib,pathlib,sys
+          p=pathlib.Path(sys.argv[1]);raw=p.read_bytes()
+          if hashlib.sha256(raw).hexdigest()!=sys.argv[2]:raise SystemExit('EXTERNAL_BOOTSTRAP_PIN')
+          root=sys.argv[3]
+          if hashlib.sha256((p.parent/'SHA256.json').read_bytes()).hexdigest()!=root:raise SystemExit('EXTERNAL_MANIFEST_PIN')
+          sys.argv=[str(p),sys.argv[4],root,*sys.argv[5:]]
+          exec(compile(raw,str(p),'exec'),{'__name__':'__main__','__file__':str(p)})
+          PY
+      - name: Acquire pinned public data only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I -B -S - "$PAYLOAD/bootstrap.INACTIVE.py" "$BOOT_PIN" "$ROOT_PIN" acquire /tmp/daemon-fs-public-inputs <<'PY'
+          import hashlib,pathlib,sys
+          p=pathlib.Path(sys.argv[1]);raw=p.read_bytes()
+          if hashlib.sha256(raw).hexdigest()!=sys.argv[2]:raise SystemExit('EXTERNAL_BOOTSTRAP_PIN')
+          root=sys.argv[3]
+          if hashlib.sha256((p.parent/'SHA256.json').read_bytes()).hexdigest()!=root:raise SystemExit('EXTERNAL_MANIFEST_PIN')
+          sys.argv=[str(p),sys.argv[4],root,*sys.argv[5:]]
+          exec(compile(raw,str(p),'exec'),{'__name__':'__main__','__file__':str(p)})
+          PY
+      - name: Seal root-owned public closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin /usr/bin/python3 -I -B -S - "$PAYLOAD/bootstrap.INACTIVE.py" "$BOOT_PIN" "$ROOT_PIN" seal /tmp/daemon-fs-public-inputs /tmp/daemon-fs-event.json <<'PY'
+          import hashlib,pathlib,sys
+          p=pathlib.Path(sys.argv[1]);raw=p.read_bytes()
+          if hashlib.sha256(raw).hexdigest()!=sys.argv[2]:raise SystemExit('EXTERNAL_BOOTSTRAP_PIN')
+          root=sys.argv[3]
+          if hashlib.sha256((p.parent/'SHA256.json').read_bytes()).hexdigest()!=root:raise SystemExit('EXTERNAL_MANIFEST_PIN')
+          sys.argv=[str(p),sys.argv[4],root,*sys.argv[5:]]
+          exec(compile(raw,str(p),'exec'),{'__name__':'__main__','__file__':str(p)})
+          PY
+      - name: Assemble public OCI and source data
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin /usr/bin/python3 -I -B -S - "/tmp/daemon-fs-sealed/bootstrap.INACTIVE.py" "$BOOT_PIN" "$ROOT_PIN" root-stage assemble <<'PY'
+          import hashlib,pathlib,sys
+          p=pathlib.Path(sys.argv[1]);raw=p.read_bytes()
+          if hashlib.sha256(raw).hexdigest()!=sys.argv[2]:raise SystemExit('EXTERNAL_BOOTSTRAP_PIN')
+          root=sys.argv[3]
+          if hashlib.sha256((p.parent/'SHA256.json').read_bytes()).hexdigest()!=root:raise SystemExit('EXTERNAL_MANIFEST_PIN')
+          sys.argv=[str(p),sys.argv[4],root,*sys.argv[5:]]
+          exec(compile(raw,str(p),'exec'),{'__name__':'__main__','__file__':str(p)})
+          PY
+      - name: Collect fresh preparation context
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I -B -S - "/tmp/daemon-fs-sealed/bootstrap.INACTIVE.py" "$BOOT_PIN" "$ROOT_PIN" collect-context prepare <<'PY'
+          import hashlib,pathlib,sys
+          p=pathlib.Path(sys.argv[1]);raw=p.read_bytes()
+          if hashlib.sha256(raw).hexdigest()!=sys.argv[2]:raise SystemExit('EXTERNAL_BOOTSTRAP_PIN')
+          root=sys.argv[3]
+          if hashlib.sha256((p.parent/'SHA256.json').read_bytes()).hexdigest()!=root:raise SystemExit('EXTERNAL_MANIFEST_PIN')
+          sys.argv=[str(p),sys.argv[4],root,*sys.argv[5:]]
+          exec(compile(raw,str(p),'exec'),{'__name__':'__main__','__file__':str(p)})
+          PY
+      - name: Prepare once with authenticated context
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin /usr/bin/python3 -I -B -S - "/tmp/daemon-fs-sealed/bootstrap.INACTIVE.py" "$BOOT_PIN" "$ROOT_PIN" seal-context prepare <<'PY'
+          import hashlib,pathlib,sys
+          p=pathlib.Path(sys.argv[1]);raw=p.read_bytes()
+          if hashlib.sha256(raw).hexdigest()!=sys.argv[2]:raise SystemExit('EXTERNAL_BOOTSTRAP_PIN')
+          root=sys.argv[3]
+          if hashlib.sha256((p.parent/'SHA256.json').read_bytes()).hexdigest()!=root:raise SystemExit('EXTERNAL_MANIFEST_PIN')
+          sys.argv=[str(p),sys.argv[4],root,*sys.argv[5:]]
+          exec(compile(raw,str(p),'exec'),{'__name__':'__main__','__file__':str(p)})
+          PY
+          sudo /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin /usr/bin/python3 -I -B -S - "/tmp/daemon-fs-sealed/bootstrap.INACTIVE.py" "$BOOT_PIN" "$ROOT_PIN" root-stage prepare <<'PY'
+          import hashlib,pathlib,sys
+          p=pathlib.Path(sys.argv[1]);raw=p.read_bytes()
+          if hashlib.sha256(raw).hexdigest()!=sys.argv[2]:raise SystemExit('EXTERNAL_BOOTSTRAP_PIN')
+          root=sys.argv[3]
+          if hashlib.sha256((p.parent/'SHA256.json').read_bytes()).hexdigest()!=root:raise SystemExit('EXTERNAL_MANIFEST_PIN')
+          sys.argv=[str(p),sys.argv[4],root,*sys.argv[5:]]
+          exec(compile(raw,str(p),'exec'),{'__name__':'__main__','__file__':str(p)})
+          PY
+      - name: Assemble selected offline root data
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin /usr/bin/python3 -I -B -S - "/tmp/daemon-fs-sealed/bootstrap.INACTIVE.py" "$BOOT_PIN" "$ROOT_PIN" root-stage offline-assemble <<'PY'
+          import hashlib,pathlib,sys
+          p=pathlib.Path(sys.argv[1]);raw=p.read_bytes()
+          if hashlib.sha256(raw).hexdigest()!=sys.argv[2]:raise SystemExit('EXTERNAL_BOOTSTRAP_PIN')
+          root=sys.argv[3]
+          if hashlib.sha256((p.parent/'SHA256.json').read_bytes()).hexdigest()!=root:raise SystemExit('EXTERNAL_MANIFEST_PIN')
+          sys.argv=[str(p),sys.argv[4],root,*sys.argv[5:]]
+          exec(compile(raw,str(p),'exec'),{'__name__':'__main__','__file__':str(p)})
+          PY
+      - name: Collect fresh offline context
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I -B -S - "/tmp/daemon-fs-sealed/bootstrap.INACTIVE.py" "$BOOT_PIN" "$ROOT_PIN" collect-context offline <<'PY'
+          import hashlib,pathlib,sys
+          p=pathlib.Path(sys.argv[1]);raw=p.read_bytes()
+          if hashlib.sha256(raw).hexdigest()!=sys.argv[2]:raise SystemExit('EXTERNAL_BOOTSTRAP_PIN')
+          root=sys.argv[3]
+          if hashlib.sha256((p.parent/'SHA256.json').read_bytes()).hexdigest()!=root:raise SystemExit('EXTERNAL_MANIFEST_PIN')
+          sys.argv=[str(p),sys.argv[4],root,*sys.argv[5:]]
+          exec(compile(raw,str(p),'exec'),{'__name__':'__main__','__file__':str(p)})
+          PY
+      - name: Run finite offline FS11 once
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin /usr/bin/python3 -I -B -S - "/tmp/daemon-fs-sealed/bootstrap.INACTIVE.py" "$BOOT_PIN" "$ROOT_PIN" seal-context offline <<'PY'
+          import hashlib,pathlib,sys
+          p=pathlib.Path(sys.argv[1]);raw=p.read_bytes()
+          if hashlib.sha256(raw).hexdigest()!=sys.argv[2]:raise SystemExit('EXTERNAL_BOOTSTRAP_PIN')
+          root=sys.argv[3]
+          if hashlib.sha256((p.parent/'SHA256.json').read_bytes()).hexdigest()!=root:raise SystemExit('EXTERNAL_MANIFEST_PIN')
+          sys.argv=[str(p),sys.argv[4],root,*sys.argv[5:]]
+          exec(compile(raw,str(p),'exec'),{'__name__':'__main__','__file__':str(p)})
+          PY
+          sudo /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin /usr/bin/python3 -I -B -S - "/tmp/daemon-fs-sealed/bootstrap.INACTIVE.py" "$BOOT_PIN" "$ROOT_PIN" root-stage offline <<'PY'
+          import hashlib,pathlib,sys
+          p=pathlib.Path(sys.argv[1]);raw=p.read_bytes()
+          if hashlib.sha256(raw).hexdigest()!=sys.argv[2]:raise SystemExit('EXTERNAL_BOOTSTRAP_PIN')
+          root=sys.argv[3]
+          if hashlib.sha256((p.parent/'SHA256.json').read_bytes()).hexdigest()!=root:raise SystemExit('EXTERNAL_MANIFEST_PIN')
+          sys.argv=[str(p),sys.argv[4],root,*sys.argv[5:]]
+          exec(compile(raw,str(p),'exec'),{'__name__':'__main__','__file__':str(p)})
+          PY
+      - name: Export selected bounded evidence only
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin /usr/bin/python3 -I -B -S - "/tmp/daemon-fs-sealed/bootstrap.INACTIVE.py" "$BOOT_PIN" "$ROOT_PIN" root-stage export <<'PY'
+          import hashlib,pathlib,sys
+          p=pathlib.Path(sys.argv[1]);raw=p.read_bytes()
+          if hashlib.sha256(raw).hexdigest()!=sys.argv[2]:raise SystemExit('EXTERNAL_BOOTSTRAP_PIN')
+          root=sys.argv[3]
+          if hashlib.sha256((p.parent/'SHA256.json').read_bytes()).hexdigest()!=root:raise SystemExit('EXTERNAL_MANIFEST_PIN')
+          sys.argv=[str(p),sys.argv[4],root,*sys.argv[5:]]
+          exec(compile(raw,str(p),'exec'),{'__name__':'__main__','__file__':str(p)})
+          PY
+      - name: Upload selected finite evidence, never roots or state
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: daemon-state-fulltypes-fs11-selected
+          path: /tmp/daemon-fs-final-selected
+          if-no-files-found: error
+          retention-days: 3
+          include-hidden-files: false

@@ -1,0 +1,121 @@
+--- v2/REVIEW.md
++++ v3/REVIEW.md
+@@ -1,3 +1,21 @@
++# V3 punctual recovery/evidence correction, source-only, NOT activated
++
++Supersedes V2 recovery wording only. No new OCI research, extraction, network/probe/unit/npm/compiler/test effects. Candidate/FS11/offline/fulltypes/filters/gate/overlay oracles unchanged. This delta edits producer/network plus this review and finite delta metadata.
++
++HOLD correction: reconcile_owned() no longer invokes network.cleanup AT ALL. Persisted JSON cannot recreate held cgroup/pidfd custody and cannot prove a destroyed identity was the originally acquired one. Therefore recovery retains network/namespace/nft/veth/unitfile/evidence for disposableVMteardown, even if systemctlstop acknowledged and managerPIDs are0. It reports noLiveWritersProved=false, blocker HELD_CGROUP_CUSTODY_NOT_RECOVERABLE_FROM_JSON and UNKNOWN. It does NOT fabricate current no-live-writers evidence from a historical record, mutate network after a failed stop, or convert conservative retention into PASS.
++
++A recovery stop request itself requires exact sourcehash/rootownership/mode of ownunitfile, durable acquiredadmission binding unit/InvocationID/controlgroup and current manager SAMEInvocation/no restarts. Missing admission or replaced invocation means NO stop either. Stopintent durable before request, failure remains recorded. A valid stop is progress only, never permission to remove red/evidence. This deliberately chooses the requested conservative retain-for-teardown path rather than adding a new observer to recover losthandles.
++
++Normal preparation immediately persists anchor.record and acquiredunitidentity BEFORE later admissionreads/permissions, closing the interval where recovery might otherwise lack identity. Existing normal path STILL proves whole acquiredcgroupterminal A/B BEFORE networkcleanup and keeps heldhandles through independentOOM; that reviewed order is unchanged.
++
++Evidence correction: earlyexport is now explicitly network-ledger-before-cleanup.json. After normalcleanup attempts, copy actual FINAL originalledger into selected/network-ledger.json and record exact bytecount/SHA/copyAfterCleanupAttempt. REMOVAL_VERIFIED or UNKNOWN/failures are the final version actually delivered, not earlierACK. If finalcopy fails, evidenceUnknown→UNKNOWN. No finalcopy when terminal was not proven and selection stayed unavailable; resources/evidence stay inVM.
++
++Guarantee labels: each deletion using known inode/ifindex/nfttablehandle says ACQUIRED_*_MATCH. If a prior command result was uncertain BEFORE identitycapture, cleanup explicitly says PREFLIGHT_ABSENT_EXACT_RESERVED_NAME_NO_PRIOR_KERNEL_IDENTITY. It never promotes exact reservedname into acquiredkernelidentity. Scope remains one durable randomrunreservation, no prefixsweep.
++
++No launcher/wiringoffline/probes/services authorized or run. All v2 realenvironmentpreconditions remain, no newpermissions. These functions are proposals for review only. Source syntax parsed and unchanged files byte-compared; no custommodule imports.
++
++---
++
+ # V2 finite operational delta, source-only and NOT activated
+ 
+ Supersedes V1 only for H1-H3 and final overlay checks. No architecture, image, source, candidate, offlineFS11, compiler or testoracle change. No extraction/network/probe/service/npm/compiler/test effects executed. AST and byte comparisons only. V1 review context follows below; these corrections replace its operational details where narrower.
+--- v2/network.INACTIVE.py
++++ v3/network.INACTIVE.py
+@@ -134,13 +134,13 @@
+   try:
+    tables=json.loads(command('/usr/sbin/nft','-j','list','tables'))
+    if any(x.get('table',{}).get('family')=='ip' and x['table'].get('name')==self.table for x in tables['nftables']):
+-    actual=json.loads(command('/usr/sbin/nft','-a','-j','list','table','ip',self.table));record=next(x['table'] for x in actual['nftables'] if x.get('table',{}).get('name')==self.table);handle=record.get('handle');expected=self.ledger['identities'].get('hostTableHandle');need(expected is None or handle==expected,'NET_CLEANUP_TABLE_REPLACED');self.ledger['identities']['hostTableHandle']=handle;self.persist();self.mutate('/usr/sbin/nft','delete','table','ip',self.table)
++    actual=json.loads(command('/usr/sbin/nft','-a','-j','list','table','ip',self.table));record=next(x['table'] for x in actual['nftables'] if x.get('table',{}).get('name')==self.table);handle=record.get('handle');expected=self.ledger['identities'].get('hostTableHandle');need(expected is None or handle==expected,'NET_CLEANUP_TABLE_REPLACED');self.ledger.setdefault('cleanupGuarantees',{})['hostTable']='ACQUIRED_HANDLE_MATCH' if expected is not None else 'PREFLIGHT_ABSENT_EXACT_RESERVED_NAME_NO_PRIOR_KERNEL_IDENTITY';self.ledger['identities']['hostTableHandle']=handle;self.persist();self.mutate('/usr/sbin/nft','delete','table','ip',self.table)
+   except BaseException as e:failures.append({'resource':'hostTable','error':type(e).__name__})
+   try:
+    ns=Path('/run/netns',self.namespace)
+    if ns.exists():
+     expected=self.ledger['identities'].get('namespaceInode');need(expected is None or ns.stat().st_ino==expected,'NET_CLEANUP_NAMESPACE_REPLACED')
+-    self.mutate('/usr/sbin/ip','netns','delete',self.namespace)
++    self.ledger.setdefault('cleanupGuarantees',{})['namespace']='ACQUIRED_INODE_MATCH' if expected is not None else 'PREFLIGHT_ABSENT_EXACT_RESERVED_NAME_NO_PRIOR_KERNEL_IDENTITY';self.persist();self.mutate('/usr/sbin/ip','netns','delete',self.namespace)
+   except BaseException as e:failures.append({'resource':'namespace','error':type(e).__name__})
+   try:
+    links=json.loads(command('/usr/sbin/ip','-j','link','show'))
+@@ -148,7 +148,7 @@
+     found=[x for x in links if x.get('ifname')==name]
+     if found:
+      if name==self.hostif and 'hostIfindex' in self.ledger['identities']:need(found[0]['ifindex']==self.ledger['identities']['hostIfindex'],'NET_CLEANUP_VETH_REPLACED')
+-     self.mutate('/usr/sbin/ip','link','delete',name)
++     self.ledger.setdefault('cleanupGuarantees',{})[name]='ACQUIRED_IFINDEX_MATCH' if name==self.hostif and 'hostIfindex' in self.ledger['identities'] else 'PREFLIGHT_ABSENT_EXACT_RESERVED_NAME_NO_PRIOR_KERNEL_IDENTITY';self.persist();self.mutate('/usr/sbin/ip','link','delete',name)
+   except BaseException as e:failures.append({'resource':'veth','error':type(e).__name__})
+   try:
+    need(not Path('/run/netns',self.namespace).exists(),'NET_NAMESPACE_RETAINED');need(not any(x.get('ifname') in (self.hostif,self.peerif) for x in json.loads(command('/usr/sbin/ip','-j','link','show'))),'NET_VETH_RETAINED');tables=json.loads(command('/usr/sbin/nft','-j','list','tables'));need(not any(x.get('table',{}).get('name')==self.table for x in tables['nftables']),'NET_HOST_TABLE_RETAINED')
+--- v2/producer.INACTIVE.py
++++ v3/producer.INACTIVE.py
+@@ -136,7 +136,7 @@
+   need(ready.get('kind')=='ONLINE_BEFORE_NPM_AND_PROBE' and str(ready.get('pid'))==s.get('MainPID') and re.fullmatch('[a-f0-9]{64}',ready.get('nonce','')),'READY_IDENTITY');need(ready.get('uid')==ready.get('gid')==uid and ready.get('supplementaryGroups')==[] and ready.get('noNewPrivileges') is True and ready.get('allCapabilitiesZero') is True and ready.get('nonStdioDescriptorsClosedBeforeGate') is True and ready.get('familyDenials')==[{'family':f,'socketType':k,'protocol':proto,'errno':97} for f,k,proto in ((1,1,0),(10,1,0),(17,2,768),(16,3,0))],'READY_PRIVILEGES')
+   wanted={'Id':unit,'User':str(uid),'Group':str(uid),'RootDirectory':str(root),'NetworkNamespacePath':'/run/netns/'+network.namespace,'RestrictAddressFamilies':'AF_INET','SystemCallArchitectures':'native','NoNewPrivileges':'yes','CapabilityBoundingSet':'','AmbientCapabilities':'','ProtectSystem':'strict','ProtectHome':'yes','OOMPolicy':'kill','OOMScoreAdjust':'0','MemoryMax':'4294967296','MemorySwapMax':'0','TasksMax':'256','CPUQuotaPerSecUSec':'2s','CPUQuotaPeriodUSec':'100ms','RuntimeMaxUSec':'10min','TimeoutStopUSec':'5s','Type':'exec','ExitType':'cgroup','RemainAfterExit':'yes','KillMode':'control-group','Restart':'no','NRestarts':'0','ActiveState':'active','SubState':'running','ControlPID':'0'}
+   need(all(s.get(k)==v for k,v in wanted.items()),'MANAGER_ADMISSION');need(Path('/proc/'+str(ready['pid'])+'/ns/net').stat().st_ino==Path('/run/netns/'+network.namespace).stat().st_ino,'REAL_NETNS_BINDING')
+-  controls={'memory.max':'4294967296','memory.swap.max':'0','memory.oom.group':'1','pids.max':'256','cpu.max':'200000 100000'};anchor=observer.Anchor(s.get('ControlGroup'),unit,s.get('InvocationID'),ready['pid'],expected_controls=controls);result['admission']=anchor.record();again=state(unit,deadline);need(all(again.get(k)==s.get(k) for k in ('InvocationID','MainPID','ControlGroup','SubState','NRestarts')),'ADMISSION_CHANGED');need(Path('/proc/'+str(ready['pid'])+'/oom_score_adj').read_text().strip()=='0','OOM_ADJUST_CHANGED');anchor.continuity();need(time.monotonic()<deadline,'LATE_PROBE_PERMISSION');durable(work/'probe-permit.json',{'pid':ready['pid'],'nonce':ready['nonce'],'peerHostIP':network.hostip,'peerHostPort':network.probePort},uid=uid,deadline=deadline,anchor=anchor)
++  controls={'memory.max':'4294967296','memory.swap.max':'0','memory.oom.group':'1','pids.max':'256','cpu.max':'200000 100000'};anchor=observer.Anchor(s.get('ControlGroup'),unit,s.get('InvocationID'),ready['pid'],expected_controls=controls);result['admission']=anchor.record();result['ownedResourceLedger']['acquiredUnitIdentity']={'unit':unit,'invocationId':s.get('InvocationID'),'controlGroup':s.get('ControlGroup'),'admission':result['admission']};durable(receipt,result);again=state(unit,deadline);need(all(again.get(k)==s.get(k) for k in ('InvocationID','MainPID','ControlGroup','SubState','NRestarts')),'ADMISSION_CHANGED');need(Path('/proc/'+str(ready['pid'])+'/oom_score_adj').read_text().strip()=='0','OOM_ADJUST_CHANGED');anchor.continuity();need(time.monotonic()<deadline,'LATE_PROBE_PERMISSION');durable(work/'probe-permit.json',{'pid':ready['pid'],'nonce':ready['nonce'],'peerHostIP':network.hostip,'peerHostPort':network.probePort},uid=uid,deadline=deadline,anchor=anchor)
+   deadline=time.monotonic()+9;probe,s=wait_file(work/'network-probe.json',2048,deadline,unit);need(probe.get('nonce')==ready['nonce'] and probe.get('pid')==ready['pid'] and probe.get('tlsVerified') is True,'PROBE_BINDING');result['networkProof']=network.confirm_probe(before,probe,deadline);durable(base/'network-proof.json',result['networkProof']);proofsha=sha(base/'network-proof.json');result['networkProofSha256']=proofsha;result['familyFilterEvidence']=ready['familyDenials'];result['nonStdioDescriptorsClosedBeforeGate']=True;durable(receipt,result)
+   anchor.continuity();contextmod.read_for_root(context_path,expected_context);need(time.monotonic()<deadline,'LATE_NPM_PERMISSION');durable(work/'npm-permit.json',{'pid':ready['pid'],'nonce':ready['nonce'],'networkProofSha256':proofsha},uid=uid,deadline=deadline,anchor=anchor);deadline=time.monotonic()+600
+   while True:
+@@ -160,7 +160,7 @@
+   if terminal or not started:
+    try:
+     selected=base/'selected';selected.mkdir(mode=0o700);exports=[]
+-    for path,name,limit in ((work/'result/receipt.json','types-receipt.json',32768),(work/'result/install.log','types-install.log',1048576),(work/'result/types.log','types-types.log',1048576),(work/'preparation.log','preparation.log',1048576),(base/'network-proof.json','network-proof.json',262144),(base/'network-ledger.json','network-ledger.json',262144),(validation/'PREPARATION-CLOSURE.json','preparation-closure.json',32768)):
++    for path,name,limit in ((work/'result/receipt.json','types-receipt.json',32768),(work/'result/install.log','types-install.log',1048576),(work/'result/types.log','types-types.log',1048576),(work/'preparation.log','preparation.log',1048576),(base/'network-proof.json','network-proof.json',262144),(base/'network-ledger.json','network-ledger-before-cleanup.json',262144),(validation/'PREPARATION-CLOSURE.json','preparation-closure.json',32768)):
+      if not path.exists():continue
+      need(path.is_file() and not path.is_symlink(),'EXPORT_TYPE')
+      with path.open('rb') as f:raw=f.read(limit+1)
+@@ -178,6 +178,13 @@
+     # consumer verifies receipt+source then copies its FOUR pinned files. Only
+     # public data retained. DisposableVM teardown is the final cleanup route.
+    except BaseException:result['cleanupUnknown']=True
++  # Final ledger is exported AFTER cleanup attempts, never mistaken for the
++  # earlier snapshot. Even UNKNOWN cleanup retains its final state and hash.
++  ledger_path=base/'network-ledger.json'
++  if (base/'selected').is_dir() and ledger_path.exists():
++   try:
++    raw=bounded(ledger_path,262144);target=base/'selected/network-ledger.json';target.write_bytes(raw);result['networkLedgerFinal']={'file':'network-ledger.json','bytes':len(raw),'sha256':sha(target),'copiedAfterCleanupAttempt':True};result.setdefault('exports',[]).append({**result['networkLedgerFinal'],'partial':False})
++   except BaseException:result['evidenceUnknown']=True
+   if anchor:anchor.close()
+   if result['forcedCleanup'] or result['cleanupUnknown'] or result['evidenceUnknown']:result['state']='UNKNOWN'
+   if result.get('state')=='PREPARED_FULLTYPES_ONLY' and result.get('workRemountedReadOnly') is not True:result['state']='UNKNOWN'
+@@ -189,18 +196,22 @@
+   if (base/'selected').is_dir():(base/'selected/closeout.json').write_bytes(receipt.read_bytes())
+  return {'receipt':str(receipt),'result':result}
+ def reconcile_owned(closeout_path,closeout_sha,reviewroot):
+- # Interrupted-run reconciliation only. Never yields a product/types PASS and
+- # never sweeps a name prefix. All candidates come from the durable own ledger.
+- verify(reviewroot);path=Path(closeout_path);st=path.lstat();need(st.st_uid==0 and st.st_nlink==1 and not st.st_mode&0o077 and not path.is_symlink() and sha(path)==closeout_sha,'RECOVERY_CLOSEOUT_CUSTODY');result=json.loads(bounded(path,262144));need(result.get('reviewRootSha256')==reviewroot,'RECOVERY_REVIEW_BINDING');owned=result.get('ownedResourceLedger',{});base=path.parent;need(re.fullmatch('/tmp/daemon-oci-prep-[a-f0-9]{16}',str(base)) and base.stat().st_uid==0 and not base.stat().st_mode&0o077,'RECOVERY_BASE_CUSTODY');unit=owned.get('unit');need(re.fullmatch('daemon-state-fs-[a-f0-9]{16}\.service',unit or '') and owned.get('unitFile')=='/run/systemd/system/'+unit,'RECOVERY_UNIT_IDENTITY');failures=[]
+- try:
+-  file=Path(owned['unitFile'])
+-  if file.exists():need(sha(file)==owned.get('unitSourceSha256'),'RECOVERY_UNIT_SOURCE_CHANGED')
++ # This entry cannot resurrect held cgroup/pidfd handles from a JSON record.
++ # It may request stop ONLY under verified acquired invocation custody. Without
++ # current no-live-writers proof it NEVER removes network, unit or evidence.
++ verify(reviewroot);path=Path(closeout_path);st=path.lstat();need(st.st_uid==0 and st.st_nlink==1 and not st.st_mode&0o077 and not path.is_symlink() and sha(path)==closeout_sha,'RECOVERY_CLOSEOUT_CUSTODY');result=json.loads(bounded(path,262144));need(result.get('reviewRootSha256')==reviewroot,'RECOVERY_REVIEW_BINDING');owned=result.get('ownedResourceLedger',{});base=path.parent;need(re.fullmatch('/tmp/daemon-oci-prep-[a-f0-9]{16}',str(base)) and base.stat().st_uid==0 and not base.stat().st_mode&0o077,'RECOVERY_BASE_CUSTODY');unit=owned.get('unit');need(re.fullmatch('daemon-state-fs-[a-f0-9]{16}\.service',unit or '') and owned.get('unitFile')=='/run/systemd/system/'+unit,'RECOVERY_UNIT_IDENTITY')
++ recovery={'state':'UNKNOWN_INTERRUPTED_RUN_NOT_VALIDATION','networkRetained':True,'unitFileRetained':True,'evidenceRetained':True,'stopRequested':False,'noLiveWritersProved':False,'managerZeroIsNotCgroupProof':True,'workAndRootRetainedUntilVMTeardown':True,'noPrefixSweep':True,'blocker':'HELD_CGROUP_CUSTODY_NOT_RECOVERABLE_FROM_JSON','resourceReconciliationFailures':[]}
++ record=base/('recovery-'+secrets.token_hex(4)+'.json');durable(record,recovery)
++ try:
++  file=Path(owned['unitFile']);need(file.is_file() and not file.is_symlink() and file.stat().st_uid==0 and not file.stat().st_mode&0o077 and sha(file)==owned.get('unitSourceSha256'),'RECOVERY_UNIT_SOURCE_CUSTODY')
++  acquired=owned.get('acquiredUnitIdentity');need(isinstance(acquired,dict) and acquired.get('unit')==unit and acquired.get('admission')==result.get('admission'),'RECOVERY_NO_ACQUIRED_UNIT_IDENTITY');invocation=acquired.get('invocationId');need(re.fullmatch('[a-f0-9]{32}',invocation or '') and acquired['admission'].get('invocationId')==invocation and acquired['admission'].get('controlGroup')==acquired.get('controlGroup'),'RECOVERY_ADMISSION_BINDING')
++  current=state(unit,time.monotonic()+5);need(current.get('Id')==unit and current.get('InvocationID')==invocation and current.get('NRestarts')=='0' and current.get('ControlGroup') in ('',acquired['controlGroup']),'RECOVERY_UNIT_REPLACED')
+   if owned.get('startAttempted'):
+-   command('/usr/bin/systemctl','stop',unit,timeout=8);manager=state(unit,time.monotonic()+5);need(manager.get('Id')==unit and manager.get('MainPID')==manager.get('ControlPID')=='0' and manager.get('ActiveState') in ('inactive','failed'),'RECOVERY_UNIT_NOT_STOPPED')
+-  if file.exists():file.unlink();command('/usr/bin/systemctl','daemon-reload')
+- except BaseException as error:failures.append({'resource':'unit','error':type(error).__name__})
+- try:
+-  ledger=Path(owned['networkLedger']);need(ledger==base/'network-ledger.json','RECOVERY_NETWORK_LEDGER_PATH');network=load('network.INACTIVE.py').OwnedNetwork.recover(ledger);network.cleanup()
+- except BaseException as error:failures.append({'resource':'network','error':type(error).__name__})
+- recovery={'state':'UNKNOWN_INTERRUPTED_RUN_NOT_VALIDATION','resourceReconciliationFailures':failures,'workAndRootRetainedUntilVMTeardown':True,'noPrefixSweep':True};durable(base/('recovery-'+secrets.token_hex(4)+'.json'),recovery);return recovery
++   recovery['stopRequested']=True;recovery['stopAttemptState']='ATTEMPTED_RESULT_UNKNOWN';durable(record,recovery);command('/usr/bin/systemctl','stop',unit,timeout=8);recovery['stopAttemptState']='COMMAND_ACKNOWLEDGED';recovery['managerAfterStop']=state(unit,time.monotonic()+5);need(recovery['managerAfterStop'].get('InvocationID')==invocation,'RECOVERY_INVOCATION_CHANGED_AFTER_STOP');durable(record,recovery)
++  # manager0 and a historical persisted terminal proof cannot recreate held
++  # kernel identities. Safe conservative fallback is VM teardown, even after
++  # acknowledged stop. No network.cleanup(), unlink or remount follows here.
++ except BaseException as error:
++  recovery['resourceReconciliationFailures'].append({'resource':'unitStopCustody','error':type(error).__name__});durable(record,recovery)
++ durable(record,recovery);return {'receipt':str(record),'result':recovery}
+ if __name__=='__main__':raise SystemExit('INACTIVE: no producer execution/activation authorized')

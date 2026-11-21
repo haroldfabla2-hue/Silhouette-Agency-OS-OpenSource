@@ -1,0 +1,40 @@
+{
+  "addedCatalogCodes": [
+    "NET_VETH_REMOTE_SOURCE_IDENTITY_CHANGED"
+  ],
+  "astParsed": [
+    "acquire-public.INACTIVE.py",
+    "bootstrap.INACTIVE.py",
+    "launch.INACTIVE.py",
+    "offline/admission-pre-node.INACTIVE.py",
+    "offline/anchored-cgroup.INACTIVE.py",
+    "offline/context-snapshot.INACTIVE.py",
+    "offline/isolated-controller.INACTIVE.py",
+    "offline/receipt-contract.INACTIVE.py",
+    "producer/bounded-public-command.INACTIVE.py",
+    "producer/fulltypes.INACTIVE.py",
+    "producer/network.INACTIVE.py",
+    "producer/oci-rootfs.INACTIVE.py",
+    "producer/online-gate.INACTIVE.py",
+    "producer/producer-contract.INACTIVE.py",
+    "producer/producer.INACTIVE.py",
+    "producer/reviewed/anchored-cgroup.INACTIVE.py",
+    "producer/reviewed/bounded-public-command.INACTIVE.py",
+    "producer/reviewed/context-snapshot.INACTIVE.py",
+    "producer/reviewed/receipt-contract.INACTIVE.py"
+  ],
+  "baseV9RootSha256": "f08495b4aa24f6f06465aea7f06e69ea68bc93e977c15c90611f9fa0c41d8f07",
+  "closedLiteralCodeCoverageComplete": true,
+  "compilerRun": false,
+  "dedicatedDisposableVMOnly": true,
+  "entrypointsRun": false,
+  "functionalResultPending": true,
+  "importsRun": false,
+  "kind": "LOCAL_STATIC_CONSOLIDATION_ONLY",
+  "oneAttemptOnly": true,
+  "postMoveObserved": false,
+  "probesRun": false,
+  "remoteWrites": false,
+  "retainOnUnknown": true,
+  "testsRun": false
+}

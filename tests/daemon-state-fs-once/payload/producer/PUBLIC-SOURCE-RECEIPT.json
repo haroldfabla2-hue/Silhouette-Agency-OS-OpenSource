@@ -1,0 +1,18 @@
+{
+  "kind": "CLEAN_PUBLIC_SOURCE_PREPARATION_RESEARCH_ONLY",
+  "baselineCommit": "cd0066be67748f5948515bf3d20e6edc36d7b7c0",
+  "baselineTree": "400b13d1ca7406c98e42c8d8c4975a4456bc1fb2",
+  "baselineTarSha256": "c845196d3d33349131d6d245f8c2478f68fecd93a0ef38777064940bf0bafe75",
+  "candidatePatchSha256": "41e6e893112dbc23da31e32c1fbc95fe7e39a05c7a7bf339fd11d3ff79445bc4",
+  "sourceFileCount": 1656,
+  "sourceFileBytes": 31165979,
+  "sourceManifestSha256": "d984ed36d7473c086328c007c0e922f59b08f69d4e72cf96cdebd949ef544e27",
+  "sourceArchiveSha256": "dbb88bfb85a1111c7c8cf1c1c9359e55a2f4da1d66e9940ef0d62723632a5c2b",
+  "sourceArchiveBytes": 18569322,
+  "noGitMetadata": true,
+  "packageLockUnchanged": true,
+  "candidateSourcePinsMatch": true,
+  "productExecution": false,
+  "installExecution": false,
+  "compilerExecution": false
+}
