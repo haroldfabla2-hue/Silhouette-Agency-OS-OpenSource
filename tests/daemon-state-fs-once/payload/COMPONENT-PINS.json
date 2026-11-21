@@ -1,8 +1,0 @@
-{
-  "candidatePatchSha256": "41e6e893112dbc23da31e32c1fbc95fe7e39a05c7a7bf339fd11d3ff79445bc4",
-  "nativeOriginalZipSha256": "a549abd2f6a03266566ee14df09ba93882ff94458bdc514bc015bb3e31ea13d4",
-  "nativeTransport": "EXACT594_MEMBERS_FROM_PINNED_ORIGINAL_ZIP",
-  "offlineRootSha256": "e2e3658f711b519250bc3a932187380c111b16648e0f80137e29a12dd71de4ae",
-  "producerRootSha256": "c7cb023132e8d611a416f3cff5c156904fee65c430f46be31b11a64dfb1ebb06",
-  "sourceArchiveSha256": "dbb88bfb85a1111c7c8cf1c1c9359e55a2f4da1d66e9940ef0d62723632a5c2b"
-}
