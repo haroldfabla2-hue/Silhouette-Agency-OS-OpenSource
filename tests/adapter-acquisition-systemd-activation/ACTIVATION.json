@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "kind": "INACTIVE_EXACT_ONE_SHOT_ACTIVATION",
+  "base": "f42b9a8c36ad90d8b40da8524035e94fd735d11e",
+  "baseTree": "400b13d1ca7406c98e42c8d8c4975a4456bc1fb2",
+  "branch": "fix/shutdown-contracts-narrow-20261117",
+  "job": "directed-narrative",
+  "changedPaths": [
+    ".github/workflows/adapter-acquisition-systemd-once.yml",
+    "tests/adapter-acquisition-systemd-activation/payload.tar.gz",
+    "tests/adapter-acquisition-systemd-activation/launch.INACTIVE.py",
+    "tests/adapter-acquisition-systemd-activation/ACTIVATION.json"
+  ],
+  "frozen": {
+    "tests/adapter-acquisition-systemd-activation/payload.tar.gz": "146b83049bcf4f62c3db82103ea680ab943c96f011dd05d9445dbad5a79c11c7",
+    "tests/adapter-acquisition-systemd-activation/launch.INACTIVE.py": "19e4d77c7271fc13d011ccf093d7b3f4d9710787834aaf8ab7de2e87f0bedfcf",
+    ".github/workflows/adapter-acquisition-systemd-once.yml": "cc8cf16db65e09a43d2d6a700bcb9069dc3f87e3b08b7afbb0cca862298f3213"
+  },
+  "payloadSha256": "146b83049bcf4f62c3db82103ea680ab943c96f011dd05d9445dbad5a79c11c7",
+  "payloadManifestSha256": "4fad86939768cbc1ac0b992e2ff1a54d2a433e511b737fcd5103fd37ed793bbf",
+  "publicationRequiresSeparateApproval": true,
+  "runAttempt": 1,
+  "automaticRetry": false,
+  "expectedPass": "PASS_ADAPTER_BOUNDARY_EIGHT_CASES_ONLY",
+  "fullApplicationValidated": false,
+  "priorFailedRunId": 44847264635,
+  "correctionScope": "SUPPORTED_GROUP_OOM_AND_ACQUIRED_CGROUP_OBSERVATION_V2_NO_PRODUCT_ORACLE_CHANGE",
+  "priorFailedRunIds": [
+    44845723644,
+    44846552345,
+    44847264635
+  ]
+}
